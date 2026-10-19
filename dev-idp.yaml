@@ -1,0 +1,57 @@
+# dev-idp config. Changes to clients, personas, lenient and token TTLs apply
+# without a restart; issuer, listen and the key need one.
+# DEV_IDP_ISSUER, DEV_IDP_LISTEN, DEV_IDP_KEY_SEED and DEV_IDP_SIGNING_KEY override these at startup.
+
+issuer: http://localhost:5556
+listen: 127.0.0.1:5556
+key_seed: "dev-idp"          # RS256 key derived from this; same seed, same key
+# signing_key: |             # optional PEM (PKCS#8 or PKCS#1), overrides key_seed
+#   -----BEGIN PRIVATE KEY-----
+access_token_ttl: 1h
+id_token_ttl: 1h
+refresh_token_ttl: 7d
+lenient: false               # true: any client_id, any localhost redirect URI
+
+clients:
+  # A browser app without a secret: must use PKCE.
+  - id: project-a
+    name: Project A
+    redirect_uris:
+      - http://localhost:3000/auth/callback
+    post_logout_redirect_uris:
+      - http://localhost:3000/
+
+  # A server-side app with a secret.
+  - id: project-b
+    name: Project B
+    secret: dev
+    redirect_uris:
+      - http://localhost:8080/login/oauth2/code/dev-idp
+    personas: [alice, bob]   # optional: limit the picker
+    # audience: [https://api.example.com]  # optional: replaces default aud [client_id, issuer]
+    # scp: true                            # optional: also emit scope as an array
+
+personas:
+  - id: alice                # becomes the sub claim
+    name: Alice Admin
+    email: alice@example.com
+    # picture, given_name, family_name, preferred_username: optional,
+    # derived from name and id when omitted
+    claims:                  # added to id_token, access token and userinfo
+      roles: [admin]
+      tenant: acme
+  - id: bob
+    name: Bob Editor
+    email: bob@example.com
+    claims:
+      roles: [editor]
+      tenant: acme
+  - id: carol
+    name: Carol Viewer
+    email: carol@example.com
+    claims:
+      roles: [viewer]
+      tenant: globex
+  - id: dave
+    name: Dave Nobody
+    email: dave@example.com

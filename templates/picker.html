@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Sign in · dev-idp{% endblock %}
+{% block content %}
+<h1>Sign in to {{ client }}</h1>
+<p class="sub">Pick a persona.</p>
+{% if let Some(error) = error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="post">
+  {% for (name, value) in hidden %}<input type="hidden" name="{{ name }}" value="{{ value }}">
+  {% endfor %}
+  {% for p in personas %}
+  <button class="persona" type="submit" name="persona" value="{{ p.id }}">
+    <strong>{{ p.name }}</strong>
+    {% if !p.detail.is_empty() %}<span>{{ p.detail }}</span><br>{% endif %}
+    {% if !p.claims.is_empty() %}<code>{{ p.claims }}</code>{% endif %}
+  </button>
+  {% endfor %}
+  <details{% if !extra_claims.is_empty() %} open{% endif %}>
+    <summary>Extra claims for this login (JSON)</summary>
+    <textarea name="extra_claims" placeholder='{"roles": ["viewer"]}'>{{ extra_claims }}</textarea>
+  </details>
+</form>
+{% endblock %}

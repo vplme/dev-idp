@@ -1,0 +1,11 @@
+services:
+  dev-idp:
+    build: .
+    ports:
+      - "127.0.0.1:5556:5556"
+    volumes:
+      # Mount the directory, not the file: editors that save by renaming
+      # would otherwise break the mount and hot-reload.
+      - ./:/config:ro
+    # environment:
+    #   DEV_IDP_ISSUER: http://dev-idp:5556   # see "Apps in Docker" in the README
