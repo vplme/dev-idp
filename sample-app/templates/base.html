@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sample app</title>
+<style>
+  :root { --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #5f6b7a; --border: #dde1e7; --accent: #2b8a3e; --error: #c92a2a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171c; --card: #1d2128; --text: #e6e9ee; --muted: #9aa4b1; --border: #2f3540; --accent: #69db7c; --error: #ff8787; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 720px; margin: 32px auto; padding: 0 16px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  p.sub { color: var(--muted); margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  .actions form { margin: 0; }
+  .button { display: inline-block; font: inherit; padding: 7px 14px; border-radius: 8px; cursor: pointer; text-decoration: none;
+            border: 1px solid var(--border); background: var(--card); color: inherit; }
+  .button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  pre { margin: 0; overflow-x: auto; font: 12.5px/1.45 ui-monospace, monospace; }
+  .error { color: var(--error); border-color: var(--error); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

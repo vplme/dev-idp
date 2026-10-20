@@ -3,9 +3,19 @@ services:
     build: .
     ports:
       - "127.0.0.1:5556:5556"
+      - "127.0.0.1:4000:4000"   # sample-app, which shares this service's network
     volumes:
       # Mount the directory, not the file: editors that save by renaming
       # would otherwise break the mount and hot-reload.
       - ./:/config:ro
     # environment:
     #   DEV_IDP_ISSUER: http://dev-idp:5556   # see "Apps in Docker" in the README
+
+  # The example app: docker compose --profile sample up --build
+  sample-app:
+    build: ./sample-app
+    profiles: [sample]
+    # Share dev-idp's network namespace, so http://localhost:5556 is dev-idp here
+    # as it is in your browser. Your own apps can use the hostname setup in the README.
+    network_mode: service:dev-idp
+    depends_on: [dev-idp]

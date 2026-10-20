@@ -76,6 +76,22 @@ again, and you log in once more. To pin a key exactly, set `signing_key` to a PE
 An issuer with a path, such as `http://localhost:5556/dex`, serves everything under
 that path.
 
+## Sample app
+
+[`sample-app/`](sample-app) is a small server-side Rust web app (axum and the
+[`openidconnect`](https://crates.io/crates/openidconnect) crate) that logs in through
+dev-idp: code flow with PKCE, nonce and state, then userinfo, refresh and logout. Its
+home page shows the id_token, access token and userinfo claims, which is handy for
+checking what a persona's config produces. It's registered in `dev-idp.yaml` as the
+`sample-app` client.
+
+```sh
+cd sample-app && cargo run                    # with dev-idp running on :5556
+docker compose --profile sample up --build    # or both in Docker
+```
+
+Then open http://localhost:4000.
+
 ## Apps in Docker
 
 The issuer must be one URL that both your browser and your app's backend can reach.
