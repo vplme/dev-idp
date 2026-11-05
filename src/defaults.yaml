@@ -1,0 +1,21 @@
+# Used when there's no dev-idp.yaml: any client id with any localhost redirect URI,
+# and these users. Creating dev-idp.yaml replaces all of it.
+key_seed: dev-idp
+lenient: true
+
+users:
+  - id: alice
+    name: Alice Admin
+    email: alice@example.com
+    claims:
+      roles: [admin]
+  - id: bob
+    name: Bob Editor
+    email: bob@example.com
+    claims:
+      roles: [editor]
+  - id: carol
+    name: Carol Viewer
+    email: carol@example.com
+    claims:
+      roles: [viewer]

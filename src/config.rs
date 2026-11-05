@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 use url::Url;
 
-/// Claims dev-idp sets itself; personas and extra claims may not override them.
+/// Claims dev-idp sets itself; users and extra claims may not override them.
 pub const RESERVED_CLAIMS: &[&str] = &[
     "iss",
     "sub",
@@ -47,7 +47,7 @@ pub struct Config {
     #[serde(default)]
     pub clients: Vec<Client>,
     #[serde(default)]
-    pub personas: Vec<Persona>,
+    pub users: Vec<User>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -61,8 +61,8 @@ pub struct Client {
     pub redirect_uris: Vec<String>,
     #[serde(default)]
     pub post_logout_redirect_uris: Vec<String>,
-    /// Limits which personas the picker shows for this client.
-    pub personas: Option<Vec<String>>,
+    /// Limits which users the picker shows for this client.
+    pub users: Option<Vec<String>>,
     /// Replaces the default access token audience `[client_id, issuer]`.
     pub audience: Option<Vec<String>>,
     /// Also emit the scope as an array in the `scp` claim.
@@ -72,7 +72,7 @@ pub struct Client {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Persona {
+pub struct User {
     pub id: String,
     pub name: String,
     pub email: Option<String>,
@@ -105,7 +105,15 @@ impl Config {
     pub fn load(path: &Path) -> Result<Config, String> {
         let text = std::fs::read_to_string(path)
             .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-        let mut config = Config::parse(&text)?;
+        Config::finish(Config::parse(&text)?)
+    }
+
+    /// The built-in config for running without a file: lenient, with a few users.
+    pub fn defaults() -> Result<Config, String> {
+        Config::finish(Config::parse(include_str!("defaults.yaml"))?)
+    }
+
+    fn finish(mut config: Config) -> Result<Config, String> {
         config.apply_env(|name| std::env::var(name).ok())?;
         config.validate()?;
         Ok(config)
@@ -149,14 +157,14 @@ impl Config {
         if self.key_seed.is_none() && self.signing_key.is_none() {
             return Err("set key_seed or signing_key".into());
         }
-        if self.personas.is_empty() {
-            return Err("define at least one persona".into());
+        if self.users.is_empty() {
+            return Err("define at least one user".into());
         }
 
         let mut ids = HashSet::new();
-        for p in &self.personas {
+        for p in &self.users {
             if p.id.is_empty() || !ids.insert(p.id.as_str()) {
-                return Err(format!("persona id {:?} is empty or duplicated", p.id));
+                return Err(format!("user id {:?} is empty or duplicated", p.id));
             }
             if let Some(reserved) = p
                 .claims
@@ -164,7 +172,7 @@ impl Config {
                 .find(|k| RESERVED_CLAIMS.contains(&k.as_str()))
             {
                 return Err(format!(
-                    "persona {:?}: claim {reserved:?} is set by dev-idp",
+                    "user {:?}: claim {reserved:?} is set by dev-idp",
                     p.id
                 ));
             }
@@ -179,9 +187,9 @@ impl Config {
                 Url::parse(uri)
                     .map_err(|e| format!("client {:?}: invalid URI {uri:?}: {e}", c.id))?;
             }
-            for p in c.personas.iter().flatten() {
+            for p in c.users.iter().flatten() {
                 if !ids.contains(p.as_str()) {
-                    return Err(format!("client {:?}: unknown persona {p:?}", c.id));
+                    return Err(format!("client {:?}: unknown user {p:?}", c.id));
                 }
             }
         }
@@ -192,8 +200,8 @@ impl Config {
         self.clients.iter().find(|c| c.id == id)
     }
 
-    pub fn persona(&self, id: &str) -> Option<&Persona> {
-        self.personas.iter().find(|p| p.id == id)
+    pub fn user(&self, id: &str) -> Option<&User> {
+        self.users.iter().find(|p| p.id == id)
     }
 
     /// Keeps the restart-only fields of `self` and reports which ones changed in `new`.
@@ -224,8 +232,8 @@ impl Client {
         self.name.as_deref().unwrap_or(&self.id)
     }
 
-    pub fn allows_persona(&self, id: &str) -> bool {
-        self.personas
+    pub fn allows_user(&self, id: &str) -> bool {
+        self.users
             .as_ref()
             .is_none_or(|ps| ps.iter().any(|p| p == id))
     }
@@ -238,7 +246,7 @@ impl Client {
             secret: None,
             redirect_uris: Vec::new(),
             post_logout_redirect_uris: Vec::new(),
-            personas: None,
+            users: None,
             audience: None,
             scp: false,
         }
@@ -265,7 +273,16 @@ pub fn is_localhost_uri(uri: &str) -> bool {
 mod tests {
     use super::*;
 
-    const MINIMAL: &str = "key_seed: test\npersonas:\n  - id: alice\n    name: Alice Admin\n";
+    const MINIMAL: &str = "key_seed: test\nusers:\n  - id: alice\n    name: Alice Admin\n";
+
+    #[test]
+    fn defaults_are_lenient_with_users() {
+        let mut config = Config::parse(include_str!("defaults.yaml")).unwrap();
+        config.validate().unwrap();
+        assert!(config.lenient);
+        assert!(config.clients.is_empty());
+        assert!(config.user("alice").is_some());
+    }
 
     #[test]
     fn defaults() {
@@ -295,21 +312,21 @@ mod tests {
     #[test]
     fn rejects_bad_configs() {
         let cases = [
-            ("personas: [{id: a, name: A}]", "key_seed or signing_key"),
+            ("users: [{id: a, name: A}]", "key_seed or signing_key"),
             (
-                "key_seed: x\npersonas: [{id: a, name: A}, {id: a, name: B}]",
+                "key_seed: x\nusers: [{id: a, name: A}, {id: a, name: B}]",
                 "duplicated",
             ),
             (
-                "key_seed: x\npersonas: [{id: a, name: A, claims: {sub: x}}]",
+                "key_seed: x\nusers: [{id: a, name: A, claims: {sub: x}}]",
                 "set by dev-idp",
             ),
             (
-                "key_seed: x\npersonas: [{id: a, name: A}]\nclients: [{id: c, personas: [b]}]",
-                "unknown persona",
+                "key_seed: x\nusers: [{id: a, name: A}]\nclients: [{id: c, users: [b]}]",
+                "unknown user",
             ),
             (
-                "key_seed: x\npersonas: [{id: a, name: A}]\nclients: [{id: c, redirect_uris: [nope]}]",
+                "key_seed: x\nusers: [{id: a, name: A}]\nclients: [{id: c, redirect_uris: [nope]}]",
                 "invalid URI",
             ),
         ];

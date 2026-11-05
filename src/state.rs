@@ -24,7 +24,7 @@ pub struct Inner {
 #[derive(Debug, Clone)]
 pub struct Grant {
     pub client_id: String,
-    pub persona_id: String,
+    pub user_id: String,
     pub scope: String,
     /// Only set for auth codes.
     pub redirect_uri: String,

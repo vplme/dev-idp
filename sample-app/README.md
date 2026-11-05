@@ -5,7 +5,7 @@ An example server-side web app that logs in through dev-idp with the
 [`src/main.rs`](src/main.rs):
 
 - `/login` starts the authorization code flow with PKCE, `state` and `nonce`
-  (`/login?prompt=login` always shows the persona picker).
+  (`/login?prompt=login` always shows the user picker).
 - `/callback` checks `state`, exchanges the code, and verifies the id_token
   (signature, issuer, audience, nonce, `at_hash`).
 - `/` shows the claims from the id_token, the access token and userinfo.

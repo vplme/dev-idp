@@ -4,16 +4,16 @@
 <p class="sub">Issuer <code>{{ issuer }}</code>{% if lenient %} · lenient mode{% endif %}</p>
 <div class="card">
   {% if let Some(name) = signed_in %}
-  Signed in as <strong>{{ name }}</strong>. Apps log in as this persona without asking.
+  Signed in as <strong>{{ name }}</strong>. Apps log in as this user without asking.
   <a href="{{ logout }}">Switch user</a>
   {% else %}
-  Not signed in. The next login shows the persona picker.
+  Not signed in. The next login shows the user picker.
   {% endif %}
 </div>
 <div class="card">
   <table>
     <tr><th>Discovery</th><td><a href="{{ discovery }}">openid-configuration</a></td></tr>
-    <tr><th>Personas</th><td>{{ personas.join(", ") }}</td></tr>
+    <tr><th>Users</th><td>{{ users.join(", ") }}</td></tr>
     <tr><th>Clients</th><td>{% if clients.is_empty() %}none{% else %}{{ clients.join(", ") }}{% endif %}</td></tr>
   </table>
 </div>

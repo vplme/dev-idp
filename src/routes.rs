@@ -27,7 +27,7 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(index))
         .route("/.well-known/openid-configuration", get(discovery))
         .route("/jwks", get(jwks))
-        .route("/authorize", get(authorize).post(choose_persona))
+        .route("/authorize", get(authorize).post(choose_user))
         .route("/token", post(token))
         .route("/userinfo", get(userinfo).post(userinfo))
         .route("/logout", get(logout).post(logout_form));
@@ -91,7 +91,7 @@ struct AuthorizeParams {
     code_challenge_method: Option<String>,
     prompt: Option<String>,
     // Only sent by the picker form.
-    persona: Option<String>,
+    user: Option<String>,
     extra_claims: Option<String>,
 }
 
@@ -204,10 +204,10 @@ async fn authorize(
         .iter()
         .any(|&p| p == "login" || p == "select_account");
 
-    let session = session(&jar, &config).filter(|(id, _)| req.client.allows_persona(id));
+    let session = session(&jar, &config).filter(|(id, _)| req.client.allows_user(id));
     match session {
-        Some((persona, auth_time)) if !force_picker => {
-            issue_code(&state, &req, &p, persona, auth_time, Map::new()).into_response()
+        Some((user, auth_time)) if !force_picker => {
+            issue_code(&state, &req, &p, user, auth_time, Map::new()).into_response()
         }
         _ if prompts.contains(&"none") => error_redirect(
             &req.redirect_uri,
@@ -219,7 +219,7 @@ async fn authorize(
     }
 }
 
-async fn choose_persona(
+async fn choose_user(
     State(state): State<AppState>,
     jar: SignedCookieJar,
     Form(p): Form<AuthorizeParams>,
@@ -229,14 +229,9 @@ async fn choose_persona(
         Ok(req) => req,
         Err(response) => return response,
     };
-    let persona = p.persona.as_deref().unwrap_or_default();
-    if config.persona(persona).is_none() || !req.client.allows_persona(persona) {
-        return picker(
-            &config,
-            &req,
-            &p,
-            Some(format!("Unknown persona \"{persona}\".")),
-        );
+    let user = p.user.as_deref().unwrap_or_default();
+    if config.user(user).is_none() || !req.client.allows_user(user) {
+        return picker(&config, &req, &p, Some(format!("Unknown user \"{user}\".")));
     }
     let extra = match tokens::parse_extra_claims(p.extra_claims.as_deref().unwrap_or_default()) {
         Ok(extra) => extra,
@@ -244,12 +239,12 @@ async fn choose_persona(
     };
 
     let auth_time = tokens::now();
-    let cookie = Cookie::build((SESSION_COOKIE, format!("{persona}:{auth_time}")))
+    let cookie = Cookie::build((SESSION_COOKIE, format!("{user}:{auth_time}")))
         .path(cookie_path(&config.issuer))
         .http_only(true)
         .secure(config.issuer.starts_with("https://"))
         .same_site(SameSite::Lax);
-    let redirect = issue_code(&state, &req, &p, persona.to_string(), auth_time, extra);
+    let redirect = issue_code(&state, &req, &p, user.to_string(), auth_time, extra);
     (jar.add(cookie), redirect).into_response()
 }
 
@@ -257,13 +252,13 @@ fn issue_code(
     state: &AppState,
     req: &ValidRequest,
     p: &AuthorizeParams,
-    persona_id: String,
+    user_id: String,
     auth_time: u64,
     extra_claims: Map<String, Value>,
 ) -> Redirect {
     let code = state.store_code(Grant {
         client_id: req.client.id.clone(),
-        persona_id,
+        user_id,
         scope: req.scope.clone(),
         redirect_uri: req.redirect_uri.clone(),
         nonce: p.nonce.clone(),
@@ -279,12 +274,12 @@ fn issue_code(
     Redirect::to(&with_query(&req.redirect_uri, &params))
 }
 
-/// The signed-in persona and when they picked it, if the persona still exists.
+/// The signed-in user and when they picked it, if the user still exists.
 fn session(jar: &SignedCookieJar, config: &Config) -> Option<(String, u64)> {
     let cookie = jar.get(SESSION_COOKIE)?;
-    let (persona, auth_time) = cookie.value().rsplit_once(':')?;
-    config.persona(persona)?;
-    Some((persona.to_string(), auth_time.parse().ok()?))
+    let (user, auth_time) = cookie.value().rsplit_once(':')?;
+    config.user(user)?;
+    Some((user.to_string(), auth_time.parse().ok()?))
 }
 
 fn cookie_path(issuer: &str) -> String {
@@ -296,13 +291,13 @@ fn cookie_path(issuer: &str) -> String {
 #[template(path = "picker.html")]
 struct PickerPage {
     client: String,
-    personas: Vec<PersonaCard>,
+    users: Vec<UserCard>,
     hidden: Vec<(&'static str, String)>,
     extra_claims: String,
     error: Option<String>,
 }
 
-struct PersonaCard {
+struct UserCard {
     id: String,
     name: String,
     detail: String,
@@ -315,18 +310,18 @@ fn picker(
     p: &AuthorizeParams,
     error: Option<String>,
 ) -> Response {
-    let personas = config
-        .personas
+    let users = config
+        .users
         .iter()
-        .filter(|persona| req.client.allows_persona(&persona.id))
-        .map(|persona| PersonaCard {
-            id: persona.id.clone(),
-            name: persona.name.clone(),
-            detail: persona.email.clone().unwrap_or_default(),
-            claims: if persona.claims.is_empty() {
+        .filter(|user| req.client.allows_user(&user.id))
+        .map(|user| UserCard {
+            id: user.id.clone(),
+            name: user.name.clone(),
+            detail: user.email.clone().unwrap_or_default(),
+            claims: if user.claims.is_empty() {
                 String::new()
             } else {
-                Value::Object(persona.claims.clone()).to_string()
+                Value::Object(user.claims.clone()).to_string()
             },
         })
         .collect();
@@ -356,7 +351,7 @@ fn picker(
     };
     let page = PickerPage {
         client: req.client.display_name().to_string(),
-        personas,
+        users,
         hidden,
         extra_claims: p.extra_claims.clone().unwrap_or_default(),
         error,
@@ -447,17 +442,17 @@ async fn token(
         None if config.lenient => Client::lenient(&client_id),
         None => return token_error("invalid_client", "Unknown client."),
     };
-    let Some(persona) = config
-        .persona(&grant.persona_id)
-        .filter(|p| client.allows_persona(&p.id))
+    let Some(user) = config
+        .user(&grant.user_id)
+        .filter(|p| client.allows_user(&p.id))
     else {
         return token_error(
             "invalid_grant",
-            "The persona no longer exists or isn't allowed for this client.",
+            "The user no longer exists or isn't allowed for this client.",
         );
     };
 
-    let issued = tokens::issue(&config, &state.key, &client, persona, &grant);
+    let issued = tokens::issue(&config, &state.key, &client, user, &grant);
     let refresh_token = state.store_refresh_token(Grant {
         redirect_uri: String::new(),
         nonce: None,
@@ -576,7 +571,7 @@ async fn logout(
         let page = error_page(
             &config.issuer,
             "Signed out",
-            "The next login shows the persona picker again.",
+            "The next login shows the user picker again.",
         );
         return (jar, page).into_response();
     };
@@ -614,14 +609,14 @@ struct IndexPage {
     signed_in: Option<String>,
     logout: String,
     discovery: String,
-    personas: Vec<String>,
+    users: Vec<String>,
     clients: Vec<String>,
 }
 
 async fn index(State(state): State<AppState>, jar: SignedCookieJar) -> Response {
     let config = state.config();
     let signed_in = session(&jar, &config)
-        .and_then(|(id, _)| config.persona(&id))
+        .and_then(|(id, _)| config.user(&id))
         .map(|p| p.name.clone());
     render(IndexPage {
         issuer: config.issuer.clone(),
@@ -629,7 +624,7 @@ async fn index(State(state): State<AppState>, jar: SignedCookieJar) -> Response 
         signed_in,
         logout: format!("{}/logout", config.issuer),
         discovery: format!("{}/.well-known/openid-configuration", config.issuer),
-        personas: config.personas.iter().map(|p| p.id.clone()).collect(),
+        users: config.users.iter().map(|p| p.id.clone()).collect(),
         clients: config.clients.iter().map(|c| c.id.clone()).collect(),
     })
     .into_response()

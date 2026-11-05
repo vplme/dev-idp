@@ -6,14 +6,16 @@ use dev_idp::{AppState, Config, SigningKey};
 use notify_debouncer_full::notify::RecursiveMode;
 use notify_debouncer_full::{DebounceEventResult, new_debouncer};
 
-/// A local OIDC provider for development: pick a persona instead of typing a password.
+/// A local OIDC provider for development: pick a user instead of typing a password.
 #[derive(Parser)]
 #[command(version)]
 struct Args {
-    /// Path to the YAML config.
-    #[arg(short, long, env = "DEV_IDP_CONFIG", default_value = "dev-idp.yaml")]
-    config: PathBuf,
+    /// Path to the YAML config [default: dev-idp.yaml, or built-in defaults if it doesn't exist]
+    #[arg(short, long, env = "DEV_IDP_CONFIG")]
+    config: Option<PathBuf>,
 }
+
+const DEFAULT_CONFIG: &str = "dev-idp.yaml";
 
 #[tokio::main]
 async fn main() {
@@ -31,18 +33,31 @@ async fn main() {
 }
 
 async fn run(args: Args) -> Result<(), String> {
-    let config = Config::load(&args.config)?;
+    // Without a file at the default path, run on built-in defaults. A path that was
+    // asked for explicitly must exist.
+    let path = args
+        .config
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG));
+    let config = if args.config.is_none() && !path.exists() {
+        tracing::info!(
+            "no {DEFAULT_CONFIG}, using built-in defaults: lenient, users alice, bob and carol"
+        );
+        Config::defaults()?
+    } else {
+        Config::load(&path)?
+    };
     let started = Instant::now();
     let key = SigningKey::from_config(&config)?;
     tracing::info!(kid = %key.kid, "signing key ready in {:.1?}", started.elapsed());
 
     let listen = config.listen;
     if !listen.ip().is_loopback() {
-        tracing::warn!("listening on {listen}: anyone who can reach it can log in as any persona");
+        tracing::warn!("listening on {listen}: anyone who can reach it can log in as any user");
     }
     let issuer = config.issuer.clone();
     let state = AppState::new(config, key);
-    let _watcher = watch(&args.config, state.clone())?;
+    let _watcher = watch(&path, state.clone())?;
 
     let listener = tokio::net::TcpListener::bind(listen)
         .await
@@ -56,7 +71,7 @@ async fn run(args: Args) -> Result<(), String> {
         .map_err(|e| format!("server error: {e}"))
 }
 
-/// Reloads the config when the file changes. Watches the directory, because
+/// Reloads the config when the file changes or appears. Watches the directory, because
 /// many editors save by writing a new file and renaming it over the old one.
 fn watch(path: &Path, state: AppState) -> Result<impl Drop, String> {
     let path = std::path::absolute(path).map_err(|e| format!("{}: {e}", path.display()))?;

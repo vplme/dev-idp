@@ -21,10 +21,10 @@ clients:
   - id: web
     secret: s3cret
     redirect_uris: [http://localhost:8080/cb]
-    personas: [bob]
+    users: [bob]
     audience: [https://api.example.com]
     scp: true
-personas:
+users:
   - id: alice
     name: Alice Admin
     email: alice@example.com
@@ -81,7 +81,7 @@ fn spa_authorize(extra: &str) -> String {
 }
 
 /// The same parameters as `spa_authorize`, as the picker form posts them.
-fn spa_form(persona: &str, extra_claims: &str) -> String {
+fn spa_form(user: &str, extra_claims: &str) -> String {
     let mut form = url::form_urlencoded::Serializer::new(String::new());
     form.extend_pairs([
         ("client_id", "spa"),
@@ -92,7 +92,7 @@ fn spa_form(persona: &str, extra_claims: &str) -> String {
         ("nonce", "n-0S6"),
         ("code_challenge", &challenge()),
         ("code_challenge_method", "S256"),
-        ("persona", persona),
+        ("user", user),
         ("extra_claims", extra_claims),
     ]);
     form.finish()
@@ -140,10 +140,10 @@ impl Idp {
             .await
     }
 
-    /// Picks a persona in the SPA's picker; returns the redirect and the session cookie.
-    async fn login(&self, persona: &str, extra_claims: &str) -> (Url, String) {
+    /// Picks a user in the SPA's picker; returns the redirect and the session cookie.
+    async fn login(&self, user: &str, extra_claims: &str) -> (Url, String) {
         let reply = self
-            .post("/authorize", &spa_form(persona, extra_claims), None)
+            .post("/authorize", &spa_form(user, extra_claims), None)
             .await;
         assert_eq!(reply.status, StatusCode::SEE_OTHER, "{}", reply.body);
         (reply.location(), reply.session_cookie())
@@ -308,7 +308,7 @@ async fn confidential_client_needs_its_secret() {
     assert!(picker.body.contains("Bob Editor") && !picker.body.contains("Alice Admin"));
 
     let login = "client_id=web&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fcb&response_type=code\
-                 &scope=openid&persona=";
+                 &scope=openid&user=";
     let denied = idp.post("/authorize", &format!("{login}alice"), None).await;
     assert_eq!(
         denied.status,
@@ -508,12 +508,12 @@ async fn reload_keeps_restart_only_fields() {
     let idp = Idp::new(CONFIG);
     let mut new = Config::parse(&format!("issuer: http://elsewhere\n{CONFIG}")).unwrap();
     new.validate().unwrap();
-    new.personas.retain(|p| p.id == "bob");
+    new.users.retain(|p| p.id == "bob");
     idp.state.reload(new);
 
     let config = idp.state.config();
     assert_eq!(config.issuer, "http://localhost:5556");
-    assert!(config.persona("alice").is_none());
+    assert!(config.user("alice").is_none());
     let picker = idp.get(&spa_authorize(""), None).await;
     assert!(!picker.body.contains("Alice Admin"));
 }

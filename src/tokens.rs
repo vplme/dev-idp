@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use jsonwebtoken::{Algorithm, Header, Validation};
 use serde_json::{Map, Value, json};
 
-use crate::config::{Client, Config, Persona, RESERVED_CLAIMS};
+use crate::config::{Client, Config, RESERVED_CLAIMS, User};
 use crate::keys::SigningKey;
 use crate::state::Grant;
 
@@ -19,31 +19,31 @@ pub fn has_scope(scope: &str, wanted: &str) -> bool {
 }
 
 /// Standard claims allowed by the granted scopes (`profile`, `email`).
-pub fn standard_claims(persona: &Persona, scope: &str) -> Map<String, Value> {
+pub fn standard_claims(user: &User, scope: &str) -> Map<String, Value> {
     let mut claims = Map::new();
     if has_scope(scope, "profile") {
-        let (first, rest) = match persona.name.split_once(' ') {
+        let (first, rest) = match user.name.split_once(' ') {
             Some((first, rest)) => (first, Some(rest)),
-            None => (persona.name.as_str(), None),
+            None => (user.name.as_str(), None),
         };
-        claims.insert("name".into(), json!(persona.name));
+        claims.insert("name".into(), json!(user.name));
         claims.insert(
             "given_name".into(),
-            json!(persona.given_name.as_deref().unwrap_or(first)),
+            json!(user.given_name.as_deref().unwrap_or(first)),
         );
-        if let Some(family) = persona.family_name.as_deref().or(rest) {
+        if let Some(family) = user.family_name.as_deref().or(rest) {
             claims.insert("family_name".into(), json!(family));
         }
         claims.insert(
             "preferred_username".into(),
-            json!(persona.preferred_username.as_deref().unwrap_or(&persona.id)),
+            json!(user.preferred_username.as_deref().unwrap_or(&user.id)),
         );
-        if let Some(picture) = &persona.picture {
+        if let Some(picture) = &user.picture {
             claims.insert("picture".into(), json!(picture));
         }
     }
     if has_scope(scope, "email")
-        && let Some(email) = &persona.email
+        && let Some(email) = &user.email
     {
         claims.insert("email".into(), json!(email));
         claims.insert("email_verified".into(), json!(true));
@@ -51,9 +51,9 @@ pub fn standard_claims(persona: &Persona, scope: &str) -> Map<String, Value> {
     claims
 }
 
-/// The persona's own claims, then the per-login extras on top.
-pub fn custom_claims(persona: &Persona, extra: &Map<String, Value>) -> Map<String, Value> {
-    let mut claims = persona.claims.clone();
+/// The user's own claims, then the per-login extras on top.
+pub fn custom_claims(user: &User, extra: &Map<String, Value>) -> Map<String, Value> {
+    let mut claims = user.claims.clone();
     claims.extend(extra.clone());
     claims
 }
@@ -83,15 +83,15 @@ pub fn issue(
     config: &Config,
     key: &SigningKey,
     client: &Client,
-    persona: &Persona,
+    user: &User,
     grant: &Grant,
 ) -> Issued {
     let iat = now();
-    let custom = custom_claims(persona, &grant.extra_claims);
+    let custom = custom_claims(user, &grant.extra_claims);
 
     let mut id = Map::new();
     id.insert("iss".into(), json!(config.issuer));
-    id.insert("sub".into(), json!(persona.id));
+    id.insert("sub".into(), json!(user.id));
     id.insert("aud".into(), json!(client.id));
     id.insert("exp".into(), json!(iat + config.id_token_ttl.as_secs()));
     id.insert("iat".into(), json!(iat));
@@ -99,7 +99,7 @@ pub fn issue(
     if let Some(nonce) = &grant.nonce {
         id.insert("nonce".into(), json!(nonce));
     }
-    id.extend(standard_claims(persona, &grant.scope));
+    id.extend(standard_claims(user, &grant.scope));
     id.extend(custom.clone());
 
     let audience = client
@@ -108,7 +108,7 @@ pub fn issue(
         .unwrap_or_else(|| vec![client.id.clone(), config.issuer.clone()]);
     let mut access = Map::new();
     access.insert("iss".into(), json!(config.issuer));
-    access.insert("sub".into(), json!(persona.id));
+    access.insert("sub".into(), json!(user.id));
     access.insert("aud".into(), json!(audience));
     access.insert("client_id".into(), json!(client.id));
     access.insert("exp".into(), json!(iat + config.access_token_ttl.as_secs()));
@@ -165,8 +165,8 @@ pub fn userinfo(config: &Config, access: &Map<String, Value>) -> Map<String, Val
         .unwrap_or_default();
     let mut info = Map::new();
     info.insert("sub".into(), json!(sub));
-    if let Some(persona) = config.persona(sub) {
-        info.extend(standard_claims(persona, scope));
+    if let Some(user) = config.user(sub) {
+        info.extend(standard_claims(user, scope));
     }
     for (k, v) in access {
         if !RESERVED_CLAIMS.contains(&k.as_str()) {
@@ -180,8 +180,8 @@ pub fn userinfo(config: &Config, access: &Map<String, Value>) -> Map<String, Val
 mod tests {
     use super::*;
 
-    fn persona() -> Persona {
-        Persona {
+    fn user() -> User {
+        User {
             id: "alice".into(),
             name: "Alice Admin".into(),
             email: Some("alice@example.com".into()),
@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn standard_claims_follow_scope() {
-        let p = persona();
+        let p = user();
         let all = standard_claims(&p, "openid profile email");
         assert_eq!(all["given_name"], "Alice");
         assert_eq!(all["family_name"], "Admin");
@@ -206,9 +206,9 @@ mod tests {
     }
 
     #[test]
-    fn extra_claims_override_persona_claims() {
+    fn extra_claims_override_user_claims() {
         let extra = parse_extra_claims(r#"{"roles": ["viewer"], "tenant": "acme"}"#).unwrap();
-        let claims = custom_claims(&persona(), &extra);
+        let claims = custom_claims(&user(), &extra);
         assert_eq!(claims["roles"], json!(["viewer"]));
         assert_eq!(claims["tenant"], "acme");
         assert!(parse_extra_claims("").unwrap().is_empty());
