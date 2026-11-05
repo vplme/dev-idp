@@ -184,3 +184,8 @@ docker compose --profile sample up --build    # or both in Docker
 ```
 
 Then open http://localhost:4000.
+
+To release, bump `version` in `Cargo.toml`, commit, and push a matching tag
+(`git tag v0.2.0 && git push origin v0.2.0`). The release workflow runs the tests
+and publishes `ghcr.io/vplme/dev-idp` for amd64 and arm64, tagged `0.2.0`, `0.2`
+and `latest`.
