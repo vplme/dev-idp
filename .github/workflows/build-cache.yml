@@ -1,0 +1,37 @@
+name: Build cache
+
+# Builds the image on main, without pushing it, to fill the Actions cache that
+# release.yml reads. A tag run can't share caches with other tags, only with the
+# default branch, so release builds would otherwise always start cold. A tag on a
+# commit main already built then finds every layer cached.
+on:
+  push:
+    branches: [main]
+    # Only what the image is built from; other changes leave its layers as they are.
+    paths:
+      - Dockerfile
+      - Cargo.toml
+      - Cargo.lock
+      - src/**
+      - templates/**
+      - .github/workflows/build-cache.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          # Must match release.yml, or its layers won't be in the cache.
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

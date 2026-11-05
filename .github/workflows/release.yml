@@ -64,5 +64,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Reads the cache build-cache.yml fills on main. No cache-to: a tag's
+          # cache can't be read by any later tag.
           cache-from: type=gha
-          cache-to: type=gha,mode=max
