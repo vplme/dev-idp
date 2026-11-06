@@ -1,3 +1,9 @@
+# Local development: `docker compose up -d --build` starts dev-idp and the sample app.
+#   dev-idp     http://localhost:5556
+#   sample-app  http://localhost:4000
+# `docker compose watch` also rebuilds and restarts a service when its code changes.
+# Edits to dev-idp.yaml apply without either, through hot-reload.
+
 services:
   dev-idp:
     build: .
@@ -10,12 +16,31 @@ services:
       - ./:/config:ro
     # environment:
     #   DEV_IDP_ISSUER: http://dev-idp:5556   # see "Apps in Docker" in the README
+    # The binary runs without a SIGTERM handler; as PID 1 it would ignore
+    # `docker compose down` until the 10s kill. An init process fixes that.
+    init: true
+    restart: unless-stopped
+    develop:
+      watch:
+        - { action: rebuild, path: ./src }
+        - { action: rebuild, path: ./templates }
+        - { action: rebuild, path: ./Cargo.toml }
+        - { action: rebuild, path: ./Cargo.lock }
 
-  # The example app: docker compose --profile sample up --build
+  # The example app.
   sample-app:
     build: ./sample-app
-    profiles: [sample]
     # Share dev-idp's network namespace, so http://localhost:5556 is dev-idp here
     # as it is in your browser. Your own apps can use the hostname setup in the README.
     network_mode: service:dev-idp
     depends_on: [dev-idp]
+    init: true
+    # sample-app retries dev-idp's discovery for ~10s at startup, then exits;
+    # restarting covers a slower dev-idp start.
+    restart: unless-stopped
+    develop:
+      watch:
+        - { action: rebuild, path: ./sample-app/src }
+        - { action: rebuild, path: ./sample-app/templates }
+        - { action: rebuild, path: ./sample-app/Cargo.toml }
+        - { action: rebuild, path: ./sample-app/Cargo.lock }

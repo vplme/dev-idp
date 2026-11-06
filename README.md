@@ -166,7 +166,8 @@ that path.
 ```sh
 cargo run --release                 # reads ./dev-idp.yaml, or the built-in defaults
 cargo run --release -- --config path/to/dev-idp.yaml
-docker compose up --build           # builds the image, mounts this directory
+docker compose up -d --build        # dev-idp on :5556 and sample-app on :4000
+docker compose watch                # same, rebuilding on code changes
 cargo test                          # unit tests plus end-to-end flow tests
 cargo clippy --all-targets
 ```
@@ -180,7 +181,7 @@ checking what a user's config produces. It's registered in `dev-idp.yaml` as the
 
 ```sh
 cd sample-app && cargo run                    # with dev-idp running on :5556
-docker compose --profile sample up --build    # or both in Docker
+docker compose up -d --build                  # or both in Docker
 ```
 
 Then open http://localhost:4000.
